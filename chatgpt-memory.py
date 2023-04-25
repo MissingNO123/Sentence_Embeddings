@@ -65,7 +65,7 @@ def chatgpt_req(text):
                            systemPrompt
                            + f' The current date and time is {datetime.now().strftime("%A %B %d %Y, %I:%M:%S %p")} Eastern Standard Time.'
                            + f' You are using {gpt} from OpenAI.'
-                           + f' Based on the semantic search preformed on chat history, the top {k} results that came up most relevant to what the user typed were as follows:\n'
+                           + f' Based on the semantic search preformed on chat history, the top {min(len(entireMessageHistory),k)} results that came up most relevant to what the user typed were as follows:\n'
                            + hitsAsString
                         }]
     # create object with system prompt and chat history to send to OpenAI for generation
