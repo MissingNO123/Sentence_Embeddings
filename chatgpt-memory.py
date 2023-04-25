@@ -4,9 +4,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 import openai
 import os
-import re
-import shutil
-import threading
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import semantic_search
 
@@ -17,11 +14,12 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda')
 
 # OPTIONS ####################################################################################################################################
 verbosity = False
-gpt = "GPT-4"                   # GPT-3.5-Turbo-0301 | GPT-4
-max_tokens = 200                # Max tokens that openai will return
-max_conv_length = 5            # Max length of conversation buffer
+gpt = "GPT-4"       # GPT-3.5-Turbo-0301 | GPT-4
+max_tokens = 200    # Max tokens that openai will return
+max_conv_length = 5 # Max length of conversation buffer
 k = 5
 systemPrompt = "You are a friendly AI assistant conversing with a Human. The user will type messages to you, and you will respond back in text. A semantic search will be run on the entire chat history to source relevant information as necessary. If you cannot answer a topic to the best of your ability, please truthfully answer that you do not know." 
+
 
 # Variables ###################################################################################################################################
 chatGPTMessageBuffer = [] # List of messages sent back and forth between ChatGPT / User, initialized with example messages
@@ -82,9 +80,8 @@ def chatgpt_req(text):
             temperature=0,
             frequency_penalty=0.2,
             presence_penalty=0.5,
-            logit_bias={'1722': -100, '292': -100, '281': -100, '20185': -100, '9552': -100, '3303': -100, '2746': -100, '19849': -100, '41599': -100, '7926': -100,
-            '1058': 1, '18': 1, '299': 5, '3972': 5}
-            # 'As', 'as', ' an', 'AI', ' AI', ' language', ' model', 'model', 'sorry', ' sorry', ' :', '3', ' n', 'ya'
+            logit_bias={'1722': -100, '292': -100, '281': -100, '20185': -100, '9552': -100, '3303': -100, '2746': -100, '19849': -100, '41599': -100, '7926': -100}
+            # 'As', 'as', ' an', 'AI', ' AI', ' language', ' model', 'model', 'sorry', ' sorry'
             )
         end_time = time.time()
         verbose_print(f'--OpenAI API took {end_time - start_time:.3f}s')
