@@ -7,7 +7,7 @@ This is a proof of concept for using sentence embeddings to effectively give Cha
 The entire chat history is being stored on a message-by-message basis, i.e. each message is being transformed into a 384-component vector.
 Before a message is sent to the API to generate, a semantic search is performed on the vectors and the top 6 most relevant chat messages are returned, which are then inserted into the generation prompt.
 Because everything is a vector, you can use algorithms like cosine similarity, Euclidean distance or even dot product to determine similarity between the user's message and messages in chat history.
-The sentence_transformers library from HuggingFace processes up to 1 million vectors by default in chunks of ~100k, and is extremely fast.
+The sentence_transformers library processes up to 1 million vectors by default in chunks of ~100k, and is extremely fast.
 
 ## Usage
 
