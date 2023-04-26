@@ -1,13 +1,12 @@
-import time
+import os
 import csv
-full_start_time = time.time()
+import time
 from datetime import datetime
 from dotenv import load_dotenv
+import numpy as np
 import openai
-import os
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import semantic_search
-import numpy as np
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
