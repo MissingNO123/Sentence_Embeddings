@@ -22,9 +22,9 @@ systemPrompt = "You are a friendly AI assistant conversing with a Human. The use
 
 
 # Variables ###################################################################################################################################
-chatGPTMessageBuffer = [] # List of messages sent back and forth between ChatGPT / User, initialized with example messages
-entireMessageHistory = []
-chathistory_embeddings = embedding_model.encode(entireMessageHistory)
+chatGPTMessageBuffer = [] # Message buffer used for context i.e. ChatGPT's short term memory
+entireMessageHistory = [] # All messages sent back and forth, in non-vector form
+chathistory_embeddings = embedding_model.encode(entireMessageHistory) # Entire history embedded in vector form
 
 
 # Functions #######################################################################################################################
@@ -34,11 +34,14 @@ def verbose_print(text):
 
 
 def append_message(message):
-    global chathistory_embeddings
     chatGPTMessageBuffer.append(message)
     messageContent = message['content']
     messageContent = messageContent[:min(len(messageContent), 512)]
     entireMessageHistory.append(f"{message['role']}: {messageContent}")
+
+
+def embed():
+    global chathistory_embeddings
     start_time = time.perf_counter()
     chathistory_embeddings = embedding_model.encode(entireMessageHistory)
     end_time = time.perf_counter()
@@ -47,8 +50,6 @@ def append_message(message):
 
 def chatgpt_req(text):
     """ Sends text to OpenAI, gets the response, and puts it into the chatbox """
-    if len(chatGPTMessageBuffer) > max_conv_length:  # Trim down chat buffer if it gets too long
-        chatGPTMessageBuffer.pop(0)
     # Query chat history
     hitsAsString = f"user: {text}" #if no embeddings present, return a string with just the user's message alone
     if (len(entireMessageHistory)):
@@ -60,6 +61,8 @@ def chatgpt_req(text):
         hitsAsString = '\n'.join([entireMessageHistory[hits[0][i]['corpus_id']] for i in range(len(hits[0]))])
     # Add user's message to the chat buffer
     append_message({"role": "user", "content": text})
+    while len(chatGPTMessageBuffer) > max_conv_length:  # Trim down chat buffer if it gets too long
+        chatGPTMessageBuffer.pop(0)
     # Init system prompt with date and add it persistently to top of chat buffer
     systemPromptObject = [{"role": "system", "content":
                            systemPrompt
@@ -87,7 +90,8 @@ def chatgpt_req(text):
         verbose_print(f'--OpenAI API took {end_time - start_time:.3f}s')
         result = completion.choices[0].message.content
         append_message({"role": "assistant", "content": result})
-        print(f"\nassistant: {result}")
+        embed()
+        print(f"assistant: {result}\n")
     except openai.APIError as e:
         err = e
         print(f"!!Got API error from OpenAI: {e}")
