@@ -26,16 +26,18 @@ system_prompt = "You are a friendly AI assistant conversing with a Human. The us
 # Variables ###################################################################################################################################
 chatGPT_message_buffer = [] # Message buffer used for context i.e. ChatGPT's short term memory
 entire_message_history = [] # Entire chat history, in non-vector form
-chat_history_embeddings = np.empty((0, 384)) # Entire history, embedded in vector form
+chat_history_embeddings = np.empty((0, 384), dtype='float32') # Entire history, embedded in vector form
 
 
 # Functions #######################################################################################################################
 def verbose_print(text):
+    """ Print only if verbosity is set to True """
     if (verbosity):
         print(text)
 
 
 def load_history():
+    """ Loads entire chat history from CSV file, properly populates vector array in memory, and initializes ChatGPT message buffer """
     global chat_history_embeddings
     global chatGPT_message_buffer
     if not os.path.isfile('history.csv'):
@@ -52,13 +54,14 @@ def load_history():
         old_messages_str = entire_message_history[-max_conv_length:]
         old_messages_json = []
         for message in old_messages_str:
-            role, content = message.split(": ")
+            role, content = message.split(": ", 1)
             json_message = {'role': role.strip(), 'content': content.strip()}
             old_messages_json.append(json_message)
         chatGPT_message_buffer = old_messages_json
 
 
 def save_history():
+    """ Saves entire chat history and vector array to CSV file """
     sanitized_data = []
     for i in range(len(entire_message_history)):
         sanitized_row = [f'"{entire_message_history[i]}"'] + [str(val) for val in chat_history_embeddings[i]]
@@ -70,19 +73,33 @@ def save_history():
 
 
 def append_message(message):
+    """ Appends a message json object to both ChatGPT message buffer and chat history """
     chatGPT_message_buffer.append(message)
     messageContent = message['content']
     messageContent = messageContent[:min(len(messageContent), 512)]
-    entire_message_history.append(f"{message['role']}: {messageContent}")
+    message_as_str = f'{message["role"]}: {message["content"]}'
+    entire_message_history.append(message_as_str)
+    embedOne(message_as_str)
 
 
-def embed():
+def embedAll():
+    """ Vector embeds entire chat history """
     global chat_history_embeddings
     start_time = time.perf_counter()
     chat_history_embeddings = embedding_model.encode(entire_message_history)
     end_time = time.perf_counter()
     verbose_print(f"Encoded {len(entire_message_history)} dataset entries in {end_time - start_time:.4f} seconds")
 
+
+def embedOne(message):
+    """ Vector embeds one message and adds it to chat history embeddings """
+    global chat_history_embeddings
+    start_time = time.perf_counter()
+    message_as_vector = embedding_model.encode([message])
+    end_time = time.perf_counter()
+    verbose_print(f"Encoded single message in {end_time - start_time:.4f} seconds")
+    chat_history_embeddings = np.vstack((chat_history_embeddings, message_as_vector[0]))
+    pass
 
 def chatgpt_req(text):
     """ Sends text to OpenAI, gets the response, and puts it into the chatbox """
@@ -127,7 +144,6 @@ def chatgpt_req(text):
         verbose_print(f'--OpenAI API took {end_time - start_time:.3f}s')
         result = completion.choices[0].message.content
         append_message({"role": "assistant", "content": result})
-        embed()
         save_history()
         print(f"assistant: {result}\n")
     except openai.APIError as e:
