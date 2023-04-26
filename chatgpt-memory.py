@@ -1,4 +1,5 @@
 import time
+import csv
 full_start_time = time.time()
 from datetime import datetime
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ import openai
 import os
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import semantic_search
+import numpy as np
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -14,17 +16,17 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda')
 
 # OPTIONS ####################################################################################################################################
 verbosity = False
-gpt = "GPT-4"       # GPT-3.5-Turbo-0301 | GPT-4
-max_tokens = 200    # Max tokens that openai will return
-max_conv_length = 5 # Max length of conversation buffer
-k = 5
-systemPrompt = "You are a friendly AI assistant conversing with a Human. The user will type messages to you, and you will respond back in text. A semantic search will be run on the entire chat history to source relevant information as necessary. If you cannot answer a topic to the best of your ability, please truthfully answer that you do not know." 
+gpt = "GPT-4"        # GPT-3.5-Turbo-0301 | GPT-4
+max_tokens = 200     # Max tokens that OpenAI can return
+max_conv_length = 5  # Max length of conversation buffer
+k = 5                # Number of results to return from semantic search
+system_prompt = "You are a friendly AI assistant conversing with a Human. The user will type messages to you, and you will respond back in text. A semantic search will be run on the entire chat history to source relevant information as necessary. If you cannot answer a topic to the best of your ability, please truthfully answer that you do not know." 
 
 
 # Variables ###################################################################################################################################
-chatGPTMessageBuffer = [] # Message buffer used for context i.e. ChatGPT's short term memory
-entireMessageHistory = [] # All messages sent back and forth, in non-vector form
-chathistory_embeddings = embedding_model.encode(entireMessageHistory) # Entire history embedded in vector form
+chatGPT_message_buffer = [] # Message buffer used for context i.e. ChatGPT's short term memory
+entire_message_history = [] # Entire chat history, in non-vector form
+chat_history_embeddings = np.empty((0, 384)) # Entire history, embedded in vector form
 
 
 # Functions #######################################################################################################################
@@ -33,46 +35,81 @@ def verbose_print(text):
         print(text)
 
 
+def load_history():
+    global chat_history_embeddings
+    global chatGPT_message_buffer
+    if not os.path.isfile('history.csv'):
+        print("No history file")
+        return
+    with open('history.csv', 'r') as csvfile:
+        csvreader = csv.reader(csvfile)
+        loaded_tensor_stack = []
+        for row in csvreader:
+            entire_message_history.append(row[0].strip('"'))
+            loaded_tensor = np.array(row[1:], dtype='float32')
+            loaded_tensor_stack.append(loaded_tensor)
+        chat_history_embeddings = np.vstack(loaded_tensor_stack)
+        old_messages_str = entire_message_history[-max_conv_length:]
+        old_messages_json = []
+        for message in old_messages_str:
+            role, content = message.split(": ")
+            json_message = {'role': role.strip(), 'content': content.strip()}
+            old_messages_json.append(json_message)
+        chatGPT_message_buffer = old_messages_json
+
+
+def save_history():
+    sanitized_data = []
+    for i in range(len(entire_message_history)):
+        sanitized_row = [f'"{entire_message_history[i]}"'] + [str(val) for val in chat_history_embeddings[i]]
+        sanitized_data.append(sanitized_row)
+        row = [entire_message_history[i]] + chat_history_embeddings[i].tolist()
+    with open('history.csv', 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerows(sanitized_data)
+
+
 def append_message(message):
-    chatGPTMessageBuffer.append(message)
+    chatGPT_message_buffer.append(message)
     messageContent = message['content']
     messageContent = messageContent[:min(len(messageContent), 512)]
-    entireMessageHistory.append(f"{message['role']}: {messageContent}")
+    entire_message_history.append(f"{message['role']}: {messageContent}")
 
 
 def embed():
-    global chathistory_embeddings
+    global chat_history_embeddings
     start_time = time.perf_counter()
-    chathistory_embeddings = embedding_model.encode(entireMessageHistory)
+    chat_history_embeddings = embedding_model.encode(entire_message_history)
     end_time = time.perf_counter()
-    verbose_print(f"Encoded {len(entireMessageHistory)} dataset entries in {end_time - start_time:.4f} seconds")
+    verbose_print(f"Encoded {len(entire_message_history)} dataset entries in {end_time - start_time:.4f} seconds")
 
 
 def chatgpt_req(text):
     """ Sends text to OpenAI, gets the response, and puts it into the chatbox """
     # Query chat history
     hitsAsString = f"user: {text}" #if no embeddings present, return a string with just the user's message alone
-    if (len(entireMessageHistory)):
+    if (len(entire_message_history)):
         query_embedding = embedding_model.encode(f'user: {text}')
         start_time = time.perf_counter()
-        hits = semantic_search(query_embedding, chathistory_embeddings, top_k=k)
+        hits = semantic_search(query_embedding, chat_history_embeddings, top_k=k)
         end_time = time.perf_counter()
         verbose_print(f"Semantic search took {end_time - start_time} seconds")
-        hitsAsString = '\n'.join([entireMessageHistory[hits[0][i]['corpus_id']] for i in range(len(hits[0]))])
+        hitsAsString = '\n'.join([entire_message_history[hits[0][i]['corpus_id']] for i in range(len(hits[0]))])
     # Add user's message to the chat buffer
     append_message({"role": "user", "content": text})
-    while len(chatGPTMessageBuffer) > max_conv_length:  # Trim down chat buffer if it gets too long
-        chatGPTMessageBuffer.pop(0)
+    while len(chatGPT_message_buffer) > max_conv_length:  # Trim down chat buffer if it gets too long
+        chatGPT_message_buffer.pop(0)
     # Init system prompt with date and add it persistently to top of chat buffer
+    # Also inject top results from semantic search 
     systemPromptObject = [{"role": "system", "content":
-                           systemPrompt
+                           system_prompt
                            + f' The current date and time is {datetime.now().strftime("%A %B %d %Y, %I:%M:%S %p")} Eastern Standard Time.'
                            + f' You are using {gpt} from OpenAI.'
-                           + f' Based on the semantic search preformed on chat history, the top {min(len(entireMessageHistory),k)} results that came up most relevant to what the user typed were as follows:\n'
+                           + f' Based on the semantic search preformed on chat history, the top {min(len(entire_message_history),k)} results that came up most relevant to what the user typed were as follows:\n'
                            + hitsAsString
                         }]
     # create object with system prompt and chat history to send to OpenAI for generation
-    messagePlusSystem = systemPromptObject + chatGPTMessageBuffer
+    messagePlusSystem = systemPromptObject + chatGPT_message_buffer
     err = None
     try:
         start_time = time.time()
@@ -91,6 +128,7 @@ def chatgpt_req(text):
         result = completion.choices[0].message.content
         append_message({"role": "assistant", "content": result})
         embed()
+        save_history()
         print(f"assistant: {result}\n")
     except openai.APIError as e:
         err = e
@@ -107,7 +145,9 @@ def chatgpt_req(text):
     finally:
         if err is not None: print(f'⚠ {err}')
 
+
 if __name__ == '__main__':
+    load_history()
     while True:
         text = input('user: ')
         chatgpt_req(text)
