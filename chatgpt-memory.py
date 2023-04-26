@@ -11,14 +11,14 @@ from sentence_transformers.util import semantic_search
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda')
+
 
 # OPTIONS ####################################################################################################################################
 verbosity = False
 gpt = "GPT-4"        # GPT-3.5-Turbo-0301 | GPT-4
 max_tokens = 200     # Max tokens that OpenAI can return
 max_conv_length = 5  # Max length of conversation buffer
-k = 5                # Number of results to return from semantic search
+k = 6                # Number of results to return from semantic search
 system_prompt = "You are a friendly AI assistant conversing with a Human. The user will type messages to you, and you will respond back in text. A semantic search will be run on the entire chat history to source relevant information as necessary. If you cannot answer a topic to the best of your ability, please truthfully answer that you do not know." 
 
 
@@ -27,8 +27,11 @@ chatGPT_message_buffer = [] # Message buffer used for context i.e. ChatGPT's sho
 entire_message_history = [] # Entire chat history, in non-vector form
 chat_history_embeddings = np.empty((0, 384), dtype='float32') # Entire history, embedded in vector form
 
+#Constants
+device = 'cuda'
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
-# Functions #######################################################################################################################
+# Functions ###################################################################################################################################
 def verbose_print(text):
     """ Print only if verbosity is set to True """
     if (verbosity):
@@ -85,7 +88,7 @@ def embedAll():
     """ Vector embeds entire chat history """
     global chat_history_embeddings
     start_time = time.perf_counter()
-    chat_history_embeddings = embedding_model.encode(entire_message_history)
+    chat_history_embeddings = embedding_model.encode(entire_message_history, device=device)
     end_time = time.perf_counter()
     verbose_print(f"Encoded {len(entire_message_history)} dataset entries in {end_time - start_time:.4f} seconds")
 
@@ -94,7 +97,7 @@ def embedOne(message):
     """ Vector embeds one message and adds it to chat history embeddings """
     global chat_history_embeddings
     start_time = time.perf_counter()
-    message_as_vector = embedding_model.encode([message])
+    message_as_vector = embedding_model.encode([message], device=device)
     end_time = time.perf_counter()
     verbose_print(f"Encoded single message in {end_time - start_time:.4f} seconds")
     chat_history_embeddings = np.vstack((chat_history_embeddings, message_as_vector[0]))
@@ -105,7 +108,7 @@ def chatgpt_req(text):
     # Query chat history
     hitsAsString = f"user: {text}" #if no embeddings present, return a string with just the user's message alone
     if (len(entire_message_history)):
-        query_embedding = embedding_model.encode(f'user: {text}')
+        query_embedding = embedding_model.encode(f'user: {text}', device=device)
         start_time = time.perf_counter()
         hits = semantic_search(query_embedding, chat_history_embeddings, top_k=k)
         end_time = time.perf_counter()
