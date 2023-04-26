@@ -29,7 +29,7 @@ chat_history_embeddings = np.empty((0, 384), dtype='float32') # Entire history, 
 
 #Constants
 device = 'cuda'
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+embedding_model = SentenceTransformer('all-MiniLM-L12-v2', device=device)
 
 # Functions ###################################################################################################################################
 def verbose_print(text):
